@@ -1,0 +1,21 @@
+digraph data_path {
+  R_zero24_339_wire_constant [shape=ellipse];
+  dummy1_347 [shape=ellipse];
+  konst_343_wire_constant [shape=ellipse];
+  konst_350_wire_constant [shape=ellipse];
+  output_342 [shape=ellipse];
+  xxsbirxxzero24 [shape=ellipse];
+  ADD_u8_u8_351_inst [shape=rectangle];
+pc  -> ADD_u8_u8_351_inst;
+konst_350_wire_constant  -> ADD_u8_u8_351_inst;
+ADD_u8_u8_351_inst -> next_pc;
+  CONCAT_u24_u32_341_inst [shape=rectangle];
+R_zero24_339_wire_constant  -> CONCAT_u24_u32_341_inst;
+imm  -> CONCAT_u24_u32_341_inst;
+CONCAT_u24_u32_341_inst -> output_342;
+  call_stmt_347_call [shape=rectangle];
+konst_343_wire_constant  -> call_stmt_347_call;
+rd  -> call_stmt_347_call;
+output_342  -> call_stmt_347_call;
+call_stmt_347_call -> dummy1_347;
+}

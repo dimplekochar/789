@@ -1,0 +1,7 @@
+digraph data_path {
+  konst_210_wire_constant [shape=ellipse];
+  ADD_u8_u8_211_inst [shape=rectangle];
+pc  -> ADD_u8_u8_211_inst;
+konst_210_wire_constant  -> ADD_u8_u8_211_inst;
+ADD_u8_u8_211_inst -> next_pc;
+}

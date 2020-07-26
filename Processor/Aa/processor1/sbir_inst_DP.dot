@@ -1,0 +1,22 @@
+digraph data_path {
+  R_Zero1_534_wire_constant [shape=ellipse];
+  R_Zero24_530_wire_constant [shape=ellipse];
+  konst_541_wire_constant [shape=ellipse];
+  output_533 [shape=ellipse];
+  unused1_538 [shape=ellipse];
+  xxsbir_instxxZero1 [shape=ellipse];
+  xxsbir_instxxZero24 [shape=ellipse];
+  ADD_u8_u8_542_inst [shape=rectangle];
+pc  -> ADD_u8_u8_542_inst;
+konst_541_wire_constant  -> ADD_u8_u8_542_inst;
+ADD_u8_u8_542_inst -> next_pc;
+  CONCAT_u24_u32_532_inst [shape=rectangle];
+R_Zero24_530_wire_constant  -> CONCAT_u24_u32_532_inst;
+imm  -> CONCAT_u24_u32_532_inst;
+CONCAT_u24_u32_532_inst -> output_533;
+  call_stmt_538_call [shape=rectangle];
+R_Zero1_534_wire_constant  -> call_stmt_538_call;
+rd  -> call_stmt_538_call;
+output_533  -> call_stmt_538_call;
+call_stmt_538_call -> unused1_538;
+}

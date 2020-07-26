@@ -1,0 +1,16 @@
+digraph data_path {
+  R_One1_350_wire_constant [shape=ellipse];
+  R_Zero32_352_wire_constant [shape=ellipse];
+  operand1_354 [shape=ellipse];
+  xxjmp_instxxOne1 [shape=ellipse];
+  xxjmp_instxxZero1 [shape=ellipse];
+  xxjmp_instxxZero32 [shape=ellipse];
+  call_stmt_354_call [shape=rectangle];
+R_One1_350_wire_constant  -> call_stmt_354_call;
+rs1  -> call_stmt_354_call;
+R_Zero32_352_wire_constant  -> call_stmt_354_call;
+call_stmt_354_call -> operand1_354;
+  slice_357_inst [shape=rectangle];
+operand1_354  -> slice_357_inst;
+slice_357_inst -> next_pc;
+}

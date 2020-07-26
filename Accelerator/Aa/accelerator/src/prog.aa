@@ -1,0 +1,280 @@
+$storage mem_array: $array[1536] $of $uint<16>
+
+$storage image: $array[16] $of $uint<16>
+$storage kernel: $array[16] $of $uint<16>
+$storage one: $uint<1>
+$storage a: $array[16] $of $uint<16>
+$storage total: $uint<16>
+$storage PJ: $uint<16>
+$storage ZJ: $uint<12>
+$storage zer: $uint<4>
+
+$pipeline $depth 14 $module [accessMem]
+	$in (read_write_bar: $uint<1> addr: $uint<12> write_data: $uint<16>)
+	$out (read_datal: $uint<64>) $is
+{
+	
+	$guard (read_write_bar) t_read_data0 := mem_array[addr]
+	$guard (read_write_bar)  addr1 := (addr+1)
+	$guard (read_write_bar) t_read_data1 := mem_array[addr1]
+	//$guard (read_write_bar) t_read_datal := ($concat t_read_data1 t_read_data0)
+	$guard (read_write_bar)  addr2 := (addr+2)
+	$guard (read_write_bar) t_read_data2 := mem_array[addr2]
+	$guard (read_write_bar)  addr3 := (addr+3)
+	$guard (read_write_bar) t_read_data3 := mem_array[addr3]
+	$guard (read_write_bar) t_read_datal := ($concat t_read_data3 t_read_data2 t_read_data1 t_read_data0)
+	$guard (~read_write_bar) mem_array[addr] := write_data
+	read_datal := ($mux read_write_bar t_read_datal 0)
+	//read_datah := ($mux read_write_bar t_read_datah 0)
+}
+
+$pipeline $depth 14 $module [accessMem_v]
+	$in (read_write_bar: $uint<1> addr: $uint<12> write_data: $uint<16>)
+	$out (read_datal: $uint<64>) $is
+{
+	
+	$guard (read_write_bar) t_read_data0 := mem_array[addr]
+	$guard (read_write_bar)  addr1 := (addr+32)
+	$guard (read_write_bar) t_read_data1 := mem_array[addr1]
+	//$guard (read_write_bar) t_read_datal := ($concat t_read_data1 t_read_data0)
+	$guard (read_write_bar)  addr2 := (addr+64)
+	$guard (read_write_bar) t_read_data2 := mem_array[addr2]
+	$guard (read_write_bar)  addr3 := (addr+96)
+	$guard (read_write_bar) t_read_data3 := mem_array[addr3]
+	$guard (read_write_bar) t_read_datal := ($concat t_read_data3 t_read_data2 t_read_data1 t_read_data0)
+	$guard (~read_write_bar) mem_array[addr] := write_data
+	read_datal := ($mux read_write_bar t_read_datal 0)
+	//read_datah := ($mux read_write_bar t_read_datah 0)
+}
+//initialization of memory
+
+// bits [31] = read_write_bar
+// [30:28] = unused.
+// [27:12] = write-data
+// [11:0] = write-address
+
+$module [accMemAccessDaemon]
+	$in (acc_mem_request: $uint<32>) $out (acc_mem_responsel: $uint<32> acc_mem_responseh: $uint<32>) $is
+{	
+	
+			cmd := acc_mem_request
+			$volatile $split (cmd 1 3 16 12)
+				(rwbar unused wdata addr)
+			$call accessMem (rwbar addr wdata) (rdatal)
+			$volatile $split (rdatal 32 32)
+				(rdata1 rdata0)
+			acc_mem_responsel := rdata0
+			acc_mem_responseh := rdata1
+	
+
+}
+$pipe status: $uint<16> $depth 1
+$pipe start: $uint<16> $depth 1
+$pipe acc_mem: $uint<16> $depth 2
+$pipe acc_mem_add: $uint<16> $depth 2
+
+ //make that  bit array
+// initialization of kernel and memory
+$module [initial]
+	$in () $out () $is
+{	
+	
+			ZJ := 0
+	$branchblock[init1] {
+		
+		$merge $entry loopback
+			$phi Y := ($bitcast($uint<12>) 0) $on $entry YI $on loopback
+		$endmerge
+		ZJ := (Y*128)
+		$branchblock[init2] {
+		
+		$dopipeline $depth 7 $buffering 2 $fullrate
+		$merge $entry $loopback
+			$phi I := ($bitcast($uint<12>) 0) $on $entry NI $on $loopback
+		$endmerge
+		wdata  := ($cast ($uint<16>) I )
+		addr := ($cast ($uint<12>) (ZJ+I))
+		$call accessMem (0  addr wdata)(rdata)
+		NI    := (I+1)
+		$while (NI < 128) 
+		
+	}
+		YI    := (Y+1)
+		$if (YI < 8) $then $place [loopback] $endif
+	}
+	ZJ := 1024
+	$branchblock[init3] {
+		
+		$dopipeline $depth 7 $buffering 2 $fullrate
+		$merge $entry $loopback
+			$phi M := ($bitcast($uint<12>) 0) $on $entry NM $on $loopback
+		$endmerge
+		wdata  := ($cast ($uint<16>) M )
+		addr := ($cast ($uint<12>) (ZJ+M))
+		$call accessMem (0  addr wdata)(rdata)
+		NM    := (M+1)
+		$while (NM < 16) 
+		
+	}
+	
+
+}
+
+$module [try1]
+	$in () $out () $is 
+{	
+		$branchblock[fetch_kernel] {
+			$dopipeline $depth 7 $buffering 2 $fullrate
+			$merge $entry $loopback
+			$phi T := ($bitcast($uint<12>) 0) $on $entry NT $on $loopback
+			$endmerge
+			NNNT := (T+ZJ)
+			NTT := ($bitcast($uint<31>) NNNT)
+			NNT := ($concat one NTT)
+		
+			$call accMemAccessDaemon (NNT) (rdatalk rdatahk)
+		
+			$split (rdatalk 16 16)
+				(rdatak1 rdatak0)
+			TT := (T+1)
+			kernel[T] := rdatak0
+			kernel[TT] := rdatak1
+			$split (rdatahk 16 16)
+				(rdatak3 rdatak2)
+			TTT := (T+2)
+			TTTT := (T+3)
+			kernel[TTT] := rdatak2
+			kernel[TTTT] := rdatak3
+		
+			NT    := (T+4)
+			$while (NT < 16) 
+
+		}
+
+		$branchblock[entire1] {
+			$merge $entry loopback
+			$phi G := ($bitcast($uint<12>) 0) $on $entry NG $on loopback
+			$endmerge
+ 	 		PJ := 0
+			$branchblock[fetch_mem1] {
+				$dopipeline $depth 7 $buffering 2 $fullrate
+				$merge $entry $loopback
+				$phi J := ($bitcast($uint<12>) 0) $on $entry NJ $on $loopback
+				$endmerge
+				NJJ := ($bitcast($uint<31>) J)
+				NGG := ($bitcast($uint<32>) G)
+				NNG := ($concat one NJJ)
+				NNJ := (NNG+NGG)
+				$call accMemAccessDaemon (NNJ) (rdatal rdatah)
+				$split (rdatal 16 16)
+					(rdatai1 rdatai0)
+				PPJ := (PJ+1)
+				image[PJ] := rdatai0 
+				image[PPJ] := rdatai1
+				$split (rdatah 16 16)
+					(rdatai3 rdatai2)
+				PPPJ := (PJ+2)
+				PPPPJ := (PJ+3)
+				image[PPPJ] := rdatai2 
+				image[PPPPJ] := rdatai3
+		
+				NJ    := (J+32)
+				PJ := (PJ+4)
+				$while (NJ < 128) 
+			}
+
+			$branchblock[entire] {
+				$merge $entry loopback
+				$phi L := ($bitcast($uint<12>) 0) $on $entry NL $on loopback
+				$endmerge
+	
+				total := 0
+				$branchblock[dot] {
+		
+					$dopipeline $depth 7 $buffering 2 $fullrate
+					$merge $entry $loopback
+					$phi K := ($bitcast($uint<32>) 0) $on $entry NK $on $loopback
+					$endmerge
+		
+					imag1 := image[K]
+					ker1 := kernel[K]
+		
+					a[K] := (imag1*ker1)
+		
+					total := (total+a[K])
+		
+					NK := (K+1)
+					$while (NK < 16) 
+				}
+				$call accessMem (0 (L+G) total)(rdata)
+	
+				f := ($concat zer (L+G))
+				acc_mem_add := f
+				acc_mem := mem_array[f]
+
+				$branchblock[rearrange_image] {
+					$dopipeline $depth 7 $buffering 2 $fullrate
+					$merge $entry $loopback
+					$phi H := ($bitcast($uint<12>) 0) $on $entry NH $on $loopback
+					$endmerge
+		
+					HH := (H+1)
+					image[H] := image[HH]
+					HHH := (H+2)
+					image[HH] := image[HHH]
+					HHHH := (H+3)
+					image[HHH] := image[HHHH]
+		
+		
+					NH := (H+4)
+					$while (NH < 16) 
+				}
+
+
+	
+				$call accessMem_v (1 ((L+G)+4) 0) (rdatar)
+				$split (rdatar 16 16 16 16)
+					(image[15] image[11] image[7] image[3])
+	
+	
+				NL := (L+1)
+				$if (NL < 29) $then $place [loopback] $endif
+			}
+
+			NG := (G+32)
+			$if (NG < 928) $then $place [loopback] $endif
+		}
+		status := 1
+		
+	
+
+	
+}
+$module [try]
+	$in () $out () $is 
+{
+	zer := 0
+	one := 1
+	$call initial () ()
+	star := start //once started will only look at command counter -- if command counter !=0 then loop runs again, else loop stops
+	$call accessMem (0  1040 1)(rdatacom1) //write one in command counter as initial
+	$branchblock[entire2] {
+			
+			$dopipeline $depth 7 $buffering 2 $fullrate
+			$merge $entry $loopback
+			$phi C := ($bitcast($uint<16>) 0) $on $entry NC $on $loopback
+			$endmerge
+			//$call initial () ()
+			status := 0
+			$call try1 () ()
+				
+			$call accessMem (1  1040 0) (rdatacom)
+			$split (rdatacom 48 16)
+					(com3 com0)
+		wdatacom2 := (com0-1)
+		$call accessMem (0  1040 wdatacom2) (rdatacom2)
+		NC := wdatacom2
+		$while (NC>0)
+		
+		}
+}

@@ -1,0 +1,276 @@
+$constant TX_DISABLED     	: 	$uint<2> := 0
+$constant TX_ENABLED      	: 	$uint<2> := 1
+$constant TX_TRANSMITTING 	: 	$uint<2> := 2
+$constant TX_TRANSMIT_PENDING	:  	$uint<2> := 3
+
+$constant RX_DISABLED      : $uint<2> := 0
+$constant RX_ENABLED       : $uint<2> := 1
+$constant RX_DATA_RECEIVED : $uint<2> := 2
+
+
+				
+
+$pipe transmit_data_pipe : $uint<8> 
+$noblock $pipe noblock_transmit_completed_pipe : $uint<1>
+$module [transmitDaemon] $in () $out () $is
+{
+	$branchblock[LooP]
+	{
+		$merge $entry loopback $endmerge
+		byte_in := transmit_data_pipe
+		SERIAL_TX_to_CONSOLE := byte_in	 $mark TXX
+		noblock_transmit_completed_pipe := 1 $synch (TXX)
+		$trace SERIAL_TX_to_CONSOLE
+
+		$place [loopback]
+	}
+}
+
+
+$volatile $module [byteSelect32]
+	$in (data_in : $uint<32> b_sel: $uint<2>)
+	$out (byte_out: $uint<8>) $is
+{
+	byte_out := ($excmux
+			 (b_sel == 3) ($slice data_in 7 0)
+			 (b_sel == 2) ($slice data_in 15 8)
+			 (b_sel == 1) ($slice data_in 23 16)
+			 (b_sel == 0) ($slice data_in 31 24))
+}
+
+$volatile $module [insertByte32]
+	$in (byte_in : $uint<8> b_sel: $uint<2>)
+	$out (word_out: $uint<32>) $is
+{
+	word_out := ($excmux
+			 (b_sel == 3) ($concat ZERO_8 ZERO_8 ZERO_8 byte_in)
+			 (b_sel == 2) ($concat ZERO_8 ZERO_8 byte_in ZERO_8)
+			 (b_sel == 1) ($concat ZERO_8 byte_in ZERO_8 ZERO_8)
+			 (b_sel == 0) ($concat byte_in ZERO_8 ZERO_8 ZERO_8))
+}
+
+
+
+// valid  req-type addr data-in 
+//   1       4       32     32     		(=69)
+$noblock $pipe noblock_serial_command : $uint<69> $depth 2
+$module [serialListenOnCpuDaemon] $in () $out () $is
+{
+	$branchblock[lOoP] {
+
+		$dopipeline $depth 3 $buffering 2 $fullrate
+
+			$merge $entry $loopback $endmerge
+			
+			request_type	:= BRIDGE_to_SERIAL_request_type
+    			addr		:= BRIDGE_to_SERIAL_addr
+			data_in		:= BRIDGE_to_SERIAL_data
+
+			$volatile cmd := ($concat ONE_1 ($slice request_type 3 0) addr data_in)
+			noblock_serial_command := cmd
+
+			$trace BRIDGE_TO_SERIAL
+		$while 1
+	}
+}
+
+// valid data-8 
+//  1      8
+$noblock $pipe noblock_serial_data_in : $uint<9>
+$module [serialListenOnRxDaemon] $in () $out () $is
+{
+	$branchblock[lOop] {
+		$merge $entry loopback $endmerge
+			d8 := CONSOLE_to_SERIAL_RX
+			$trace CONSOLE_to_SERIAL_RX
+			noblock_serial_data_in := ($concat ONE_1 d8)
+		$place [loopback]
+	}
+}
+
+
+$module [serialDaemon] $in () $out () $is
+{
+	$branchblock [lOoP] {
+		$dopipeline $depth 3 $buffering 2 $fullrate
+			$merge $entry $loopback 
+				$phi tx_state := TX_DISABLED $on $entry next_tx_state $buffering 2  $on $loopback
+				$phi rx_state := RX_DISABLED $on $entry next_rx_state $buffering 2  $on $loopback
+
+
+				// rx-full tx-full rx-int-enable rx-enable tx-enable
+				//   1        1       1           1            1   	(=5)
+				$phi control_register := ZERO_5 $on $entry next_control_register $buffering 2  $on $loopback
+				$phi tx_buffer	      := ZERO_8 $on $entry next_tx_buffer $buffering 2  $on $loopback
+				$phi rx_register      := ZERO_8 $on $entry next_rx_register $buffering 2  $on $loopback
+
+				$phi serial_cmd := _b0 $on $entry noblock_serial_command $on $loopback
+			$endmerge
+
+			$volatile $split (serial_cmd 1 4 32 32)
+						(valid req_type addr data_in)
+			$volatile $split (control_register 1 1 1 1 1) 
+						(cr_rx_full cr_tx_full cr_rx_intr_enable cr_rx_enable cr_tx_enable)
+
+			$guard (valid) $rreport (serial serial_cmd req_type addr data_in)
+
+			$volatile is_write := (valid & (req_type == REQUEST_TYPE_WRITE))
+			$volatile is_read  := (valid & (req_type == REQUEST_TYPE_READ))
+			$volatile is_ctrl_reg_access := (valid & (addr == ADDR_SERIAL_CONTROL_REGISTER))
+			$volatile is_tx_buffer_access := (valid & (addr == ADDR_SERIAL_TX_REGISTER))
+			$volatile is_rx_buffer_access := (valid & (addr == ADDR_SERIAL_RX_REGISTER))
+
+			$guard (is_read) $trace SERIAL_READ
+			$guard (is_write) $trace SERIAL_WRITE
+			$guard (is_ctrl_reg_access) $trace SERIAL_CTRL_REG_ACCESS
+			$guard (is_tx_buffer_access) $trace SERIAL_TX_BUF_ACCESS
+			$guard (is_rx_buffer_access) $trace SERIAL_RX_BUF_ACCESS
+
+			$volatile tx_enable := ($reduce &
+							is_write
+							is_ctrl_reg_access
+							(data_in [] 0))
+			$guard (tx_enable) $trace SERIAL_TX_ENABLE
+
+			$volatile tx_disable := ($reduce &
+							is_write
+							is_ctrl_reg_access
+							(~(data_in [] 0)))
+			$guard (tx_disable) $trace SERIAL_TX_DISABLE
+
+			$volatile write_tx_buffer := ($reduce & is_write is_tx_buffer_access)
+
+			$volatile tx_is_enabled 		:= (control_register [] 0)
+
+			
+			$volatile transmit_flag := (tx_state == TX_TRANSMITTING)
+			$guard (transmit_flag)  transmit_data_pipe := tx_buffer
+			$guard (transmit_flag)  $trace SERIAL_TRANSMIT_START
+
+			$volatile read_transmit_ok := (tx_state == TX_TRANSMIT_PENDING)
+			$guard (read_transmit_ok)  tx_ok := noblock_transmit_completed_pipe 
+	 		$volatile transmit_done := (read_transmit_ok & tx_ok)
+			$guard (transmit_done) $trace SERIAL_TRANSMIT_COMPLETE
+
+			// next-tx-state.
+			$volatile next_tx_state := 
+				($excmux
+					(tx_state == TX_DISABLED)
+						($mux tx_enable TX_ENABLED TX_DISABLED)
+					(tx_state == TX_ENABLED)
+						($prioritymux
+							tx_disable TX_DISABLED // can disable while enabled...
+							(cr_tx_full | write_tx_buffer) TX_TRANSMITTING
+							$default TX_ENABLED)
+					(tx_state == TX_TRANSMITTING)	
+							TX_TRANSMIT_PENDING
+					(tx_state == TX_TRANSMIT_PENDING)	
+						// will hang until transmit has succeeded.
+						($mux (read_transmit_ok & tx_ok)
+							TX_ENABLED
+							TX_TRANSMIT_PENDING
+						)
+				)
+
+			// tx-buffer
+			$volatile $call byteSelect32 (data_in ($slice ADDR_SERIAL_TX_REGISTER 1 0)) (tx_byte_in) 
+			$volatile next_tx_buffer := 
+					($mux ($reduce & (tx_state == TX_ENABLED)  write_tx_buffer) 
+							tx_byte_in tx_buffer)
+
+			// if not full, then go to full if moving to transmitting state.
+			// stay full until transmit is ok..
+			//  (Note: software must check full flag before over-writing)
+			$volatile next_tx_full := 
+				($mux (~cr_tx_full) 
+					((next_tx_state == TX_TRANSMITTING) | (next_tx_state == TX_TRANSMIT_PENDING))
+					(~(read_transmit_ok & tx_ok)))
+
+			// rx-side
+			$volatile rx_enable := ($reduce &
+							is_write
+							is_ctrl_reg_access
+							(data_in [] 1))
+			$volatile rx_disable := ($reduce &
+							is_write
+							is_ctrl_reg_access
+							(~(data_in [] 1)))
+
+
+			$guard (rx_enable) $trace SERIAL_RX_ENABLE
+
+			$volatile rx_is_enabled 		:= (control_register [] 1)
+			$volatile rx_interrupt_is_enabled  	:= (control_register [] 2)
+
+			// receive data is rx_state == RX_ENABLED
+			$volatile receive_data := ((~rx_disable) & (rx_state == RX_ENABLED))
+			$guard (receive_data) serial_data := noblock_serial_data_in
+			$volatile $split (serial_data 1 8) (s8_valid s8)
+			$volatile serial_data_ok := (receive_data & s8_valid)
+			$guard (serial_data_ok) $trace SERIAL_DATA_RECEIVED
+
+			$volatile next_rx_state := 
+				($excmux 
+					(rx_state == RX_DISABLED)
+						($mux rx_enable RX_ENABLED RX_DISABLED)
+					(rx_state == RX_ENABLED)
+						($mux rx_disable RX_DISABLED 
+								($mux serial_data_ok RX_DATA_RECEIVED RX_ENABLED))
+					(rx_state == RX_DATA_RECEIVED) 
+						($mux rx_disable RX_DISABLED
+							($mux (is_read & is_rx_buffer_access) RX_ENABLED RX_DATA_RECEIVED)))
+			
+
+			$volatile next_rx_register := ($mux serial_data_ok s8 rx_register)
+			$volatile next_rx_full     := (next_rx_state  == RX_DATA_RECEIVED) 
+
+			$volatile serial_read := (is_read & is_rx_buffer_access)
+			$guard (serial_read) $trace SERIAL_RX_READ
+
+
+			
+			// interrupt on Rx?
+			$volatile irl_to_irc :=
+				($mux rx_interrupt_is_enabled
+						($mux (rx_state == RX_DATA_RECEIVED) SERIAL_IRL 0) 0)
+			SERIAL_to_IRC_INT := irl_to_irc
+			$volatile irl_not_zero := (irl_to_irc != 0)
+			$guard (irl_not_zero) $trace SERIAL_INTERRUPT
+			
+
+
+			// control-register update..
+			$volatile next_control_register :=
+				($mux (is_write & is_ctrl_reg_access) 
+						($concat next_rx_full next_tx_full ($slice data_in  2 0))
+						($concat next_rx_full next_tx_full rx_interrupt_is_enabled
+										rx_is_enabled tx_is_enabled))
+							
+			// read access...
+			$volatile read_rx_buffer  := ($reduce & is_read  is_rx_buffer_access)
+			$volatile read_tx_buffer  := ($reduce & is_read  is_tx_buffer_access)
+			$volatile read_control_register := ($reduce & is_read is_ctrl_reg_access)
+			$volatile rd_8 := 
+				($excmux read_rx_buffer rx_register
+						read_tx_buffer tx_buffer)
+
+			$volatile rd_addr_2 :=
+				($excmux 
+					read_rx_buffer ($slice ADDR_SERIAL_RX_REGISTER 1 0)
+					read_tx_buffer ($slice ADDR_SERIAL_TX_REGISTER 1 0))
+					
+			$volatile $call insertByte32 (rd_8 rd_addr_2) (rd_32)
+			$volatile send_read_data := ($reduce | read_rx_buffer read_tx_buffer read_control_register)
+
+			// always send a response, bud.
+			$volatile read_data := ($mux send_read_data 
+						   ($mux read_control_register 
+							($bitcast ($uint<32>) control_register) rd_32) 0)
+			$guard (valid) SERIAL_to_BRIDGE_data := read_data
+
+		$while 1
+	}
+}
+
+
+

@@ -1,0 +1,26 @@
+digraph data_path {
+  addr_291 [shape=ellipse];
+  dummy1_301 [shape=ellipse];
+  konst_292_wire_constant [shape=ellipse];
+  konst_294_wire_constant [shape=ellipse];
+  konst_297_wire_constant [shape=ellipse];
+  konst_304_wire_constant [shape=ellipse];
+  output_296 [shape=ellipse];
+  ADD_u8_u8_305_inst [shape=rectangle];
+pc  -> ADD_u8_u8_305_inst;
+konst_304_wire_constant  -> ADD_u8_u8_305_inst;
+ADD_u8_u8_305_inst -> next_pc;
+  call_stmt_296_call [shape=rectangle];
+konst_292_wire_constant  -> call_stmt_296_call;
+addr_291  -> call_stmt_296_call;
+konst_294_wire_constant  -> call_stmt_296_call;
+call_stmt_296_call -> output_296;
+  call_stmt_301_call [shape=rectangle];
+konst_297_wire_constant  -> call_stmt_301_call;
+rd  -> call_stmt_301_call;
+output_296  -> call_stmt_301_call;
+call_stmt_301_call -> dummy1_301;
+  slice_290_inst [shape=diamond];
+rs1_data  -> slice_290_inst;
+slice_290_inst -> addr_291;
+}

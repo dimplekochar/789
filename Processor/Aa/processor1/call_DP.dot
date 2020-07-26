@@ -1,0 +1,19 @@
+digraph data_path {
+  R_zero24_149_wire_constant [shape=ellipse];
+  dummy_157 [shape=ellipse];
+  konst_153_wire_constant [shape=ellipse];
+  pc_32_152 [shape=ellipse];
+  xxcallxxzero24 [shape=ellipse];
+  CONCAT_u24_u32_151_inst [shape=rectangle];
+R_zero24_149_wire_constant  -> CONCAT_u24_u32_151_inst;
+pc  -> CONCAT_u24_u32_151_inst;
+CONCAT_u24_u32_151_inst -> pc_32_152;
+  call_stmt_157_call [shape=rectangle];
+konst_153_wire_constant  -> call_stmt_157_call;
+rd  -> call_stmt_157_call;
+pc_32_152  -> call_stmt_157_call;
+call_stmt_157_call -> dummy_157;
+  slice_160_inst [shape=rectangle];
+rs1_data  -> slice_160_inst;
+slice_160_inst -> next_pc;
+}

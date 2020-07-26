@@ -1,0 +1,81 @@
+$module [processor_daemon] $in () $out () $is
+{
+	$branchblock[loop] {
+
+		$dopipeline $depth 15 $buffering 2 $fullrate 
+
+			$merge $entry $loopback 
+				$phi ifetch_state    := _b0 $on $entry 
+								($call iFetchStage (ifetch_actions ifetch_state)) $on $loopback
+				$phi icache_state     := _b0 $on $entry $guard (get_from_icache) NOBLOCK_ICACHE_TO_CPU $on $loopback
+
+				$phi idecode_state   := _b0 $on $entry 
+								($call iDecodeStage (idecode_actions idecode_state)) $on $loopback
+				$phi iregfile_state  := _b0 $on $entry 
+								($call iRegfileStage (iregfile_actions iregfile_state)) $on $loopback
+				$phi iexec_state     := _b0 $on $entry 
+								($call iExecuteStage (iexec_actions iexec_state)) $on $loopback
+				$phi dcache_state     := _b0 $on $entry $guard (get_from_dcache) NOBLOCK_DCACHE_TO_CPU $on $loopback
+
+				$phi retire_state     := _b0 $on $entry ($call iRetireStage (iretire_actions iretire_state)) $on $loopback
+			$endmerge
+			$volatile $call scoreBoard   
+				(ifetch_state icache_state idecode_state 
+						iregfile_state iexec_state dcache_state iretire_state) 
+							(ifetch_actions idecode_actions iregfile_actions iexec_actions
+								icache_actions dcache_actions)
+
+			$volatile extractSendToIcache  (ifetch_actions) (send_to_icache message_to_icache)
+			$guard (send_to_icache)
+				IFETCH_TO_ICACHE := message_to_icache
+
+			$volatile extractSendToDcache  (iexec_actions) (send_to_dcache message_to_dcache)
+			$guard (send_to_dcache)
+				IFETCH_TO_ICACHE := message_to_dcache
+
+			$volatile extractGetFromIcache (icache_actions) (get_from_icache)
+			$volatile extractGetFromDcache (dcache_actions) (get_from_dcache)
+
+		$while 1
+	}
+}
+		
+$volatile 
+$module [scoreBoard]
+	$in (ifetch_state idecode_state iregfile_state iexec_state icache_state dcache_state iretire_state) 
+	$out (ifetch_actions idecode_actions iregfile_actions iexec_actions icache_actions dcache_actions iretire_actions)
+$is
+{
+}
+
+
+$pipeline $depth 7 $module [iFetchStage] $in (ifetch_actions: $uint<> ifetch_state: $uint<>)
+	$out (next_ifetch_state: $uint<>) $is
+{
+}
+
+$pipeline $depth 7 $module [ICacheStage] $in (icache_actions: $uint<> icache_state: $uint<>)
+	$out (next_icache_state: $uint<>) $is
+{
+}
+
+$pipeline $depth 7 $module [iDecodeStage] $in (idecode_actions: $uint<> idecode_state: $uint<>)
+	$out (next_idecode_state: $uint<>) $is
+{
+}
+
+$pipeline $depth 7 $module [iRegfileStage] $in (iregfile_actions: $uint<> iregfile_state: $uint<>)
+	$out (next_iregfile_state: $uint<>) $is
+{
+}
+
+$pipeline $depth 7 $module [iExecStage] $in (iexec_actions: $uint<> iexec_state: $uint<>)
+	$out (next_iexec_state: $uint<>) $is
+{
+}
+
+$pipeline $depth 7 $module [DCacheStage] $in (dcache_actions: $uint<> dcache_state: $uint<>)
+	$out (next_dcache_state: $uint<>) $is
+{
+}
+

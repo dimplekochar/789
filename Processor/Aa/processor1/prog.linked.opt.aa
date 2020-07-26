@@ -1,0 +1,325 @@
+$pipe  LEDS : $uint<16>  $depth 1  $signal 
+// can point into 
+$storage  mem : $array[256] $of $uint<32> // memory space index = 0  base address = 0  word size = 32
+// can point into 
+$storage  next_pc1 : $uint<8> // memory space index = 1  base address = 0  word size = 8
+// can point into 
+$storage  reg : $array[256] $of $uint<32> // memory space index = 2  base address = 0  word size = 32
+// can point into 
+$pipe  reg_output : $uint<8>  $depth 40 
+// can point into 
+$storage  right_shift : $uint<32> // memory space index = 3  base address = 0  word size = 32
+// can point into 
+$pipe  write_mem : $uint<8>  $depth 40 
+// can point into 
+$pipeline $depth 7 $buffering 1 $module [accessMem]
+$in ( read_write_bar : $uint<1>   addr : $uint<8>   write_data : $uint<32>  )
+$out ( read_data : $uint<32>  )
+$is
+{
+  $guard (~read_write_bar) mem[addr] := write_data// bits of buffering = 32. 
+  $guard (read_write_bar) read_data := mem[addr]// bits of buffering = 32. 
+  $attribute delay 6
+}
+$pipeline $depth 7 $buffering 1 $module [accessreg]
+$in ( read_write_bar : $uint<1>   addr : $uint<8>   write_data : $uint<32>  )
+$out ( read_data : $uint<32>  )
+$is
+{
+  $guard (~read_write_bar) reg[addr] := write_data// bits of buffering = 32. 
+  $guard (read_write_bar) read_data := reg[addr]// bits of buffering = 32. 
+  $attribute delay 6
+}
+$module [add]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  output := (rs1_data + rs2_data)// bits of buffering = 32. 
+  $call accessreg (0  rd output ) (dummy ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [and_i]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  output := (rs1_data & rs2_data)// bits of buffering = 32. 
+  $call accessreg (0  rd output ) (dummy1 ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [bn]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  bnn := (rs1_data >> 31 )// bits of buffering = 32. 
+  $guard (~bnn) next_pc1 := (pc + 1 )// bits of buffering = 8. 
+  $guard (bnn) next_pc1 := ( $slice rs2_data 7 0 ) // bits of buffering = 8. 
+  next_pc := next_pc1// bits of buffering = 8. 
+}
+$module [bz]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  bzz := rs1_data// bits of buffering = 32. 
+  $guard (bzz) next_pc1 := (pc + 1 )// bits of buffering = 8. 
+  $guard (~bzz) next_pc1 := ( $slice rs2_data 7 0 ) // bits of buffering = 8. 
+  next_pc := next_pc1// bits of buffering = 8. 
+}
+$module [call]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  $constant  zero24 : $uint<24>:= 0  
+  pc_32 := (zero24 && pc)// bits of buffering = 32. 
+  $call accessreg (0  rd pc_32 ) (dummy ) 
+  next_pc := ( $slice rs1_data 7 0 ) // bits of buffering = 8. 
+}
+$module [cmp]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  output := ((( $mux (rs1_data == rs2_data) 0   _b0  )  | ( $mux (rs1_data < rs2_data) -1   _b0  ) ) | ( $mux (rs1_data > rs2_data) 1   _b0  ) )// bits of buffering = 32. 
+  $call accessreg (0  rd output ) (dummy ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [global_storage_initializer_]
+$in ()
+$out ()
+$is
+{
+  $null
+}
+$module [halt]
+$in ( pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [init_mem]
+$in ()
+$out ()
+$is
+{
+  $branchblock [loop]
+  {
+    $merge $entry loopback 
+    $phi I := 			  ($bitcast ($uint<8>) 0  ) $on   $entry 			  NI $on   loopback 
+    // type of target is $uint<8>
+    $endmerge
+    NII := ($cast ($uint<32>) I )// bits of buffering = 32. 
+    mem[I] := NII// bits of buffering = 32. 
+    NI := (I + 1 )// bits of buffering = 8. 
+    $if (I < 10 ) $then 
+    $place[loopback]
+    $endif
+  }
+}
+$module [init_reg]
+$in ()
+$out ()
+$is
+{
+  $branchblock [loop]
+  {
+    $merge $entry loopback 
+    $phi J := 			  ($bitcast ($uint<8>) 0  ) $on   $entry 			  NJ $on   loopback 
+    // type of target is $uint<8>
+    $endmerge
+    NJJ := ($cast ($uint<32>) J )// bits of buffering = 32. 
+    reg[J] := NJJ// bits of buffering = 32. 
+    NJ := (J + 1 )// bits of buffering = 8. 
+    $if (J < 64 ) $then 
+    $place[loopback]
+    $endif
+  }
+}
+$module [jmp]
+$in ( rs1_data : $uint<32>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  next_pc := ( $slice rs1_data 7 0 ) // bits of buffering = 8. 
+}
+$module [load]
+$in ( rs1_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  $volatile addr := ( $slice rs1_data 7 0 ) 
+  $call accessMem (1  addr 0  ) (output ) 
+  $call accessreg (0  rd output ) (dummy1 ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [or_i]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  output := (rs1_data | rs2_data)// bits of buffering = 32. 
+  $call accessreg (0  rd output ) (dummy ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [sbir]
+$in ( imm : $uint<8>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  $constant  zero24 : $uint<24>:= 0  
+  output := (zero24 && imm)// bits of buffering = 32. 
+  $call accessreg (0  rd output ) (dummy1 ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [sll_i]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  output := (rs1_data << rs2_data)// bits of buffering = 32. 
+  $call accessreg (0  rd output ) (dummy ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [sra_i]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  right_shift := (rs1_data >> rs2_data)// bits of buffering = 32. 
+  no_of_shifts := (( $mux (rs2_data < 33 ) 1   _b0  )  | ( $mux (rs2_data > 32 ) 0   _b0  ) )// bits of buffering = 32. 
+  sraa := (right_shift & no_of_shifts)// bits of buffering = 32. 
+  sraaa := (right_shift & ( ~ no_of_shifts ))// bits of buffering = 32. 
+  $guard (sraa) new := (_hffffffff  << (32  - rs1_data))// bits of buffering = 32. 
+  $guard (sraa) right_shift := (right_shift | new)// bits of buffering = 32. 
+  $guard (sraaa) right_shift := _hffffffff // bits of buffering = 32. 
+  output := right_shift// bits of buffering = 32. 
+  $call accessreg (0  rd output ) (dummy ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [srl_i]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  output := (rs1_data >> rs2_data)// bits of buffering = 32. 
+  $call accessreg (0  rd output ) (dummy ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [store]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  $volatile addr := ( $slice rs1_data 7 0 ) 
+  $call accessMem (0  addr rs2_data ) (dummy1 ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [sub]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  output := (rs1_data - rs2_data)// bits of buffering = 32. 
+  $call accessreg (0  rd output ) (dummy ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [xnor_i]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  output := (rs1_data ~^ rs2_data)// bits of buffering = 32. 
+  $call accessreg (0  rd output ) (dummy ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [xor_i]
+$in ( rs1_data : $uint<32>   rs2_data : $uint<32>   rd : $uint<8>   pc : $uint<8>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  output := (rs1_data ^ rs2_data)// bits of buffering = 32. 
+  $call accessreg (0  rd output ) (dummy ) 
+  next_pc := (pc + 1 )// bits of buffering = 8. 
+}
+$module [try]
+$in ( pc : $uint<8>   inst : $uint<32>  )
+$out ( next_pc : $uint<8>  )
+$is
+{
+  $volatile op := ( $slice inst 31 24 ) 
+  $volatile rs1 := ( $slice inst 23 16 ) 
+  $volatile rs2 := ( $slice inst 15 8 ) 
+  $volatile rd := ( $slice inst 7 0 ) 
+  $volatile halt1 := (op == 1 )
+  $volatile sbir1 := (op == 2 )
+  $volatile load1 := (op == 3 )
+  $volatile store1 := (op == 4 )
+  $volatile and1 := (op == 5 )
+  $volatile or1 := (op == 6 )
+  $volatile xnor1 := (op == 7 )
+  $volatile xor1 := (op == 8 )
+  $volatile add1 := (op == 9 )
+  $volatile sub1 := (op == 10 )
+  $volatile sll1 := (op == 11 )
+  $volatile srl1 := (op == 12 )
+  $volatile sra1 := (op == 13 )
+  $volatile bz1 := (op == 14 )
+  $volatile bn1 := (op == 15 )
+  $volatile call1 := (op == 16 )
+  $volatile jmp1 := (op == 17 )
+  $volatile cmp1 := (op == 18 )
+  $call accessreg (1  rs1 0  ) (rs1_data ) 
+  $call accessreg (1  rs2 0  ) (rs2_data ) 
+  $guard (halt1) $call halt (pc ) (next_pc1 ) 
+  $guard (sbir1) $call sbir (rs1 rd pc ) (next_pc2 ) 
+  $guard (load1) $call load (rs1_data rd pc ) (next_pc3 ) 
+  $guard (store1) $call store (rs1_data rs2_data pc ) (next_pc4 ) 
+  $guard (and1) $call and_i (rs1_data rs2_data rd pc ) (next_pc5 ) 
+  $guard (or1) $call or_i (rs1_data rs2_data rd pc ) (next_pc6 ) 
+  $guard (xnor1) $call xnor_i (rs1_data rs2_data rd pc ) (next_pc7 ) 
+  $guard (xor1) $call xor_i (rs1_data rs2_data rd pc ) (next_pc8 ) 
+  $guard (add1) $call add (rs1_data rs2_data rd pc ) (next_pc9 ) 
+  $guard (sub1) $call sub (rs1_data rs2_data rd pc ) (next_pc10 ) 
+  $guard (sll1) $call sll_i (rs1_data rs2_data rd pc ) (next_pc11 ) 
+  $guard (srl1) $call srl_i (rs1_data rs2_data rd pc ) (next_pc12 ) 
+  $guard (sra1) $call sra_i (rs1_data rs2_data rd pc ) (next_pc13 ) 
+  $guard (bz1) $call bz (rs1_data rs2_data rd pc ) (next_pc14 ) 
+  $guard (bn1) $call bn (rs1_data rs2_data rd pc ) (next_pc15 ) 
+  $guard (call1) $call call (rs1_data rs2_data rd pc ) (next_pc16 ) 
+  $guard (jmp1) $call jmp (rs1_data pc ) (next_pc17 ) 
+  $guard (cmp1) $call cmp (rs1_data rs2_data rd pc ) (next_pc18 ) 
+  next_pc := ( $mux (op == 1 ) next_pc1  ( $mux (op == 2 ) next_pc2  ( $mux (op == 3 ) next_pc3  ( $mux (op == 4 ) next_pc4  ( $mux (op == 5 ) next_pc5  ( $mux (op == 6 ) next_pc6  ( $mux (op == 7 ) next_pc7  ( $mux (op == 8 ) next_pc8  ( $mux (op == 9 ) next_pc9  ( $mux (op == 10 ) next_pc10  ( $mux (op == 11 ) next_pc11  ( $mux (op == 12 ) next_pc12  ( $mux (op == 13 ) next_pc13  ( $mux (op == 14 ) next_pc14  ( $mux (op == 15 ) next_pc15  ( $mux (op == 16 ) next_pc16  ( $mux (op == 17 ) next_pc17  ( $mux (op == 18 ) next_pc18  ($bitcast ($uint<8>) 0  ) )  )  )  )  )  )  )  )  )  )  )  )  )  )  )  )  )  ) // bits of buffering = 8. 
+}
+$module [try1]
+$in ()
+$out ()
+$is
+{
+  $constant  zero8 : $uint<8>:= 0  
+  $call init_mem () () 
+  $call init_reg () () 
+  $branchblock [loop]
+  {
+    $merge $entry loopback 
+    $phi pc := 			  ($bitcast ($uint<8>) 0  ) $on   $entry 			  next_pc $on   loopback 
+    // type of target is $uint<8>
+    $endmerge
+    inst1 := write_mem// bits of buffering = 8. 
+    inst2 := write_mem// bits of buffering = 8. 
+    inst3 := write_mem// bits of buffering = 8. 
+    inst4 := write_mem// bits of buffering = 8. 
+    inst := ((inst1 && inst2) && (inst3 && inst4))// bits of buffering = 32. 
+    $call try (pc inst ) (next_pc )  $mark FIRST 
+    reg_output := pc $synch ( $update FIRST )  // bits of buffering = 8. 
+    LEDS := (zero8 && pc)// bits of buffering = 16. 
+    $place[loopback]
+  }
+}
+// Memory space 0: mem 
+// Memory space 1: next_pc1 
+// Memory space 2: reg 
+// Memory space 3: right_shift 

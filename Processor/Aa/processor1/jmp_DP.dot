@@ -1,0 +1,5 @@
+digraph data_path {
+  slice_280_inst [shape=rectangle];
+rs1_data  -> slice_280_inst;
+slice_280_inst -> next_pc;
+}

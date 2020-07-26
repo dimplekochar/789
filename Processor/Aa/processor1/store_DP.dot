@@ -1,0 +1,18 @@
+digraph data_path {
+  addr_475 [shape=ellipse];
+  dummy1_480 [shape=ellipse];
+  konst_476_wire_constant [shape=ellipse];
+  konst_483_wire_constant [shape=ellipse];
+  ADD_u8_u8_484_inst [shape=rectangle];
+pc  -> ADD_u8_u8_484_inst;
+konst_483_wire_constant  -> ADD_u8_u8_484_inst;
+ADD_u8_u8_484_inst -> next_pc;
+  call_stmt_480_call [shape=rectangle];
+konst_476_wire_constant  -> call_stmt_480_call;
+addr_475  -> call_stmt_480_call;
+rs2_data  -> call_stmt_480_call;
+call_stmt_480_call -> dummy1_480;
+  slice_474_inst [shape=diamond];
+rs1_data  -> slice_474_inst;
+slice_474_inst -> addr_475;
+}

@@ -1,0 +1,12 @@
+#-----------------------------------------------------------
+# Vivado v2019.1 (64-bit)
+# SW Build 2552052 on Fri May 24 14:47:09 MDT 2019
+# IP Build 2548770 on Fri May 24 18:01:18 MDT 2019
+# Start of session at: Sun Nov 24 11:35:17 2019
+# Process ID: 5154
+# Current directory: /home/dimple/Downloads/Fourth_Year_First_Semester/EE789/project_5/project_5.runs/impl_1
+# Command line: vivado -log basys3_top.vdi -applog -product Vivado -messageDb vivado.pb -mode batch -source basys3_top.tcl -notrace
+# Log file: /home/dimple/Downloads/Fourth_Year_First_Semester/EE789/project_5/project_5.runs/impl_1/basys3_top.vdi
+# Journal file: /home/dimple/Downloads/Fourth_Year_First_Semester/EE789/project_5/project_5.runs/impl_1/vivado.jou
+#-----------------------------------------------------------
+source basys3_top.tcl -notrace

@@ -1,0 +1,19 @@
+digraph data_path {
+  dummy_59 [shape=ellipse];
+  konst_55_wire_constant [shape=ellipse];
+  konst_62_wire_constant [shape=ellipse];
+  output_54 [shape=ellipse];
+  ADD_u32_u32_53_inst [shape=rectangle];
+rs1_data  -> ADD_u32_u32_53_inst;
+rs2_data  -> ADD_u32_u32_53_inst;
+ADD_u32_u32_53_inst -> output_54;
+  ADD_u8_u8_63_inst [shape=rectangle];
+pc  -> ADD_u8_u8_63_inst;
+konst_62_wire_constant  -> ADD_u8_u8_63_inst;
+ADD_u8_u8_63_inst -> next_pc;
+  call_stmt_59_call [shape=rectangle];
+konst_55_wire_constant  -> call_stmt_59_call;
+rd  -> call_stmt_59_call;
+output_54  -> call_stmt_59_call;
+call_stmt_59_call -> dummy_59;
+}

@@ -1,0 +1,19 @@
+digraph data_path {
+  dummy_460 [shape=ellipse];
+  konst_456_wire_constant [shape=ellipse];
+  konst_463_wire_constant [shape=ellipse];
+  output_455 [shape=ellipse];
+  ADD_u8_u8_464_inst [shape=rectangle];
+pc  -> ADD_u8_u8_464_inst;
+konst_463_wire_constant  -> ADD_u8_u8_464_inst;
+ADD_u8_u8_464_inst -> next_pc;
+  LSHR_u32_u32_454_inst [shape=rectangle];
+rs1_data  -> LSHR_u32_u32_454_inst;
+rs2_data  -> LSHR_u32_u32_454_inst;
+LSHR_u32_u32_454_inst -> output_455;
+  call_stmt_460_call [shape=rectangle];
+konst_456_wire_constant  -> call_stmt_460_call;
+rd  -> call_stmt_460_call;
+output_455  -> call_stmt_460_call;
+call_stmt_460_call -> dummy_460;
+}

@@ -1,0 +1,340 @@
+$pipe LEDS:     $uint<16> $signal
+$pipe write_mem : $uint<8> $depth 40
+$pipe reg_output : $uint<8> $depth 40
+$storage mem: $array[256] $of $uint<32>
+$storage reg: $array[256] $of $uint<32>
+$storage right_shift: $uint<32>
+$storage next_pc1: $uint<8>
+
+$pipeline $depth 7 $module [accessMem]
+ 	$in (read_write_bar: $uint<1> addr: $uint<8> write_data: $uint<32>)
+ 	$out (read_data: $uint<32>)
+ 	$is
+ {
+ 	$guard (~read_write_bar) mem[addr] := write_data
+ 	$guard (read_write_bar) read_data := mem[addr]
+}
+
+ $module [init_mem]
+ 	$in () $out () $is
+ {
+ 	$branchblock[loop] {
+			$merge $entry loopback
+ 				$phi I := ($bitcast ($uint<8>) 0) $on $entry NI  $on loopback
+ 			$endmerge
+			//mem1 := write_mem
+			//mem2 := write_mem
+			//mem3 := write_mem
+			//mem4 := write_mem
+			//mem[I] := ($concat mem1 mem2 mem3 mem4)
+	
+			NII := ($cast ($uint<32>) I)
+			mem[I] := NII		        
+			NI := (I+1)
+	
+ 		$if (I < 10) $then $place [loopback] $endif
+ 	}
+ }
+
+$pipeline $depth 7 $module [accessreg]
+	$in (read_write_bar: $uint<1> addr: $uint<8> write_data: $uint<32>)
+	$out (read_data: $uint<32>)
+	$is
+{
+	$guard (~read_write_bar) reg[addr] := write_data
+	$guard (read_write_bar) read_data := reg[addr]
+}
+
+
+$module [init_reg]
+	$in () $out () $is
+{
+	$branchblock[loop] {
+			$merge $entry loopback
+				$phi J := ($bitcast ($uint<8>) 0) $on $entry NJ  $on loopback
+			$endmerge
+			
+		NJJ := ($cast ($uint<32>) J)
+		reg[J] := NJJ
+		NJ := (J+1)
+		$if (J < 64) $then $place [loopback] $endif
+
+	}
+
+
+}
+
+
+$module [halt] $in (pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	next_pc := (pc+1)
+}
+
+$module [sbir] $in (imm: $uint<8> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	$constant zero24: $uint<24> := 0
+	output:= ($concat zero24 imm)
+
+	$call accessreg(0 rd output)(dummy1)
+
+	next_pc := (pc+1)
+}
+
+$module [load] $in (rs1_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	
+
+	$volatile $split (rs1_data 24 8)(dummy addr)
+	$call accessMem(1 addr 0)(output)
+
+	$call accessreg(0 rd output)(dummy1)
+
+	next_pc := (pc+1)
+}
+
+$module [store] $in (rs1_data: $uint<32> rs2_data: $uint<32> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+
+	
+	$volatile $split (rs1_data 24 8)(dummy addr)
+	$call accessMem(0 addr rs2_data)(dummy1)
+
+	next_pc := (pc+1)
+}
+
+$module [and_i] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	
+
+	output := (rs1_data & rs2_data)
+
+	$call accessreg(0 rd output)(dummy1)
+
+	next_pc := (pc+1)
+}
+
+
+$module [or_i] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	
+
+	output := (rs1_data | rs2_data)
+
+	$call accessreg(0 rd output)(dummy)
+
+	next_pc := (pc+1)
+}
+
+$module [xnor_i] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	
+	output := (rs1_data ~^ rs2_data)
+
+	$call accessreg(0 rd output)(dummy)
+
+	next_pc := (pc+1)
+}
+
+$module [xor_i] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	
+	output := (rs1_data ^ rs2_data)
+
+	$call accessreg(0 rd output)(dummy)
+
+	next_pc := (pc+1)
+}
+
+
+$module [add] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	
+	output := (rs1_data+rs2_data)
+
+	$call accessreg(0 rd output)(dummy)
+
+	next_pc := (pc+1)
+}
+
+$module [sub] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	
+	output := (rs1_data-rs2_data)
+	$call accessreg(0 rd output)(dummy)
+
+	next_pc := (pc+1)
+}
+
+
+$module [sll_i] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	
+	
+
+	output := (rs1_data << rs2_data)
+
+	$call accessreg(0 rd output)(dummy)
+
+	next_pc := (pc+1)
+}
+
+
+$module [srl_i] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	
+
+	output := (rs1_data >> rs2_data)
+
+	$call accessreg(0 rd output)(dummy)
+
+	next_pc := (pc+1)
+}
+
+$module [sra_i] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	
+	msb := (rs1_data >> 31) //find MSB
+	right_shift :=  (rs1_data >> rs2_data)
+	no_of_shifts := ($excmux (rs2_data < 33) 1 (rs2_data > 32) 0) 
+	sraa := (right_shift & no_of_shifts) //if msb 1 and shifts < 33
+	sraaa := (right_shift & (~no_of_shifts)) //if msb 1 and shifts > 32
+	$guard (sraa) new := (_hffffffff << (32 - rs1_data)) 
+	$guard (sraa) right_shift := (right_shift |  new) 
+	$guard (sraaa) right_shift := _hffffffff
+	output := right_shift
+	$call accessreg(0 rd output)(dummy)
+
+	next_pc := (pc+1)
+}
+
+
+$module [bz] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	
+
+	bzz := rs1_data
+
+	$guard(bzz) next_pc1 := (pc+1)
+	$guard(~bzz) 	$split (rs2_data 24 8)(dummy next_pc1) 
+	next_pc := next_pc1
+}
+
+
+$module [bn] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	
+	bnn := (rs1_data>>31)
+
+	$guard(~bnn) next_pc1 := (pc+1)
+	$guard(bnn) 	$split (rs2_data 24 8)(dummy next_pc1) 
+	next_pc := next_pc1
+}
+
+
+
+
+$module [call] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+	$constant zero24: $uint<24> := 0	
+	pc_32 := ($concat zero24 pc)
+	$call accessreg(0 rd pc_32)(dummy)
+	$split (rs1_data 24 8)(dummy1 next_pc) 
+}
+
+
+
+
+$module [jmp] $in (rs1_data: $uint<32> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+
+	$split (rs1_data 24 8)(dummy next_pc)
+}
+
+
+
+$module [cmp] $in (rs1_data: $uint<32> rs2_data: $uint<32> rd: $uint<8> pc: $uint<8>) $out (next_pc: $uint<8>) $is
+{
+
+	output := ($excmux (rs1_data == rs2_data) 0 (rs1_data < rs2_data)  -1 (rs1_data > rs2_data)  1)
+	$call accessreg(0 rd output)(dummy)
+	next_pc := (pc+1)
+}
+
+
+$module [try] $in (pc: $uint<8> inst: $uint<32>) $out (next_pc: $uint<8>) $is
+{
+//	$call accessMem(1 pc 0)(inst)
+
+	$volatile $split (inst 8 8 8 8) (op rs1 rs2 rd)
+
+	
+			$volatile halt1 := (op == 1)
+			$volatile sbir1 := (op == 2)
+			$volatile load1 := (op == 3)
+			$volatile store1 := (op == 4)
+			$volatile and1 := (op == 5)
+			$volatile or1 := (op == 6)
+			$volatile xnor1 := (op == 7)
+			$volatile xor1 := (op == 8)
+			$volatile add1 := (op == 9)
+			$volatile sub1 := (op == 10)
+			$volatile sll1 := (op == 11)
+			$volatile srl1 := (op == 12)
+			$volatile sra1 := (op == 13)
+			$volatile bz1 := (op == 14)
+			$volatile bn1 := (op == 15)
+			$volatile call1 := (op == 16)
+			$volatile jmp1 := (op == 17)
+			$volatile cmp1 := (op == 18)	
+
+	$call accessreg(1 rs1 0)(rs1_data)
+	$call accessreg(1 rs2 0)(rs2_data)
+	$guard(halt1) $call halt(pc)(next_pc1)
+	$guard(sbir1) $call sbir(rs1 rd pc)(next_pc2)
+	$guard(load1) $call load(rs1_data rd pc)(next_pc3)
+	$guard(store1) $call store(rs1_data rs2_data pc)(next_pc4)
+	$guard(and1) $call and_i(rs1_data rs2_data rd pc)(next_pc5)
+	$guard(or1) $call or_i(rs1_data rs2_data rd pc)(next_pc6)
+	$guard(xnor1) $call xnor_i(rs1_data rs2_data rd pc)(next_pc7)
+	$guard(xor1) $call xor_i(rs1_data rs2_data rd pc)(next_pc8)
+	$guard(add1) $call add(rs1_data rs2_data rd pc)(next_pc9)
+	$guard(sub1) $call sub(rs1_data rs2_data rd pc)(next_pc10)
+	$guard(sll1) $call sll_i(rs1_data rs2_data rd pc)(next_pc11)
+	$guard(srl1) $call srl_i(rs1_data rs2_data rd pc)(next_pc12)
+	$guard(sra1) $call sra_i(rs1_data rs2_data rd pc)(next_pc13)
+	$guard(bz1) $call bz(rs1_data rs2_data rd pc)(next_pc14)
+	$guard(bn1) $call bn(rs1_data rs2_data rd pc)(next_pc15)
+	$guard(call1) $call call(rs1_data rs2_data rd pc)(next_pc16)
+	$guard(jmp1) $call jmp(rs1_data pc)(next_pc17)
+	$guard(cmp1) $call cmp(rs1_data rs2_data rd pc)(next_pc18)
+
+	next_pc := ($prioritymux (op == 1) next_pc1 (op == 2) next_pc2 (op == 3) next_pc3 (op == 4) next_pc4 (op == 5) next_pc5 (op == 6) next_pc6 (op == 7) next_pc7 (op == 8) next_pc8 (op == 9) next_pc9 (op == 10) next_pc10 (op == 11) next_pc11 (op == 12) next_pc12 (op == 13) next_pc13 (op == 14) next_pc14 (op == 15) next_pc15 (op == 16) next_pc16 (op == 17) next_pc17 (op == 18) next_pc18 $default ($bitcast ($uint<8>) 0))
+}
+
+$module [try1] $in () $out () $is
+{
+	$constant zero8: $uint<8> := 0
+	$call init_mem () ()
+	$call init_reg () ()
+
+	$branchblock[loop] {
+			$merge $entry loopback
+				$phi pc := ($bitcast ($uint<8>) 0) $on $entry next_pc $on loopback
+			$endmerge 
+
+			inst1 := write_mem
+			inst2 := write_mem
+			inst3 := write_mem
+			inst4 := write_mem
+			inst := ($concat inst1 inst2 inst3 inst4)
+			$call try (pc inst)(next_pc) $mark FIRST
+			reg_output := pc  $synch ($update FIRST)
+			//$split (register_output 8 8 8 8) (reg1 reg2 reg3 reg4)
+			LEDS := ($concat zero8 pc)
+			
+
+		$place [loopback]	
+		//$if (next_pc < 10)  $then $place [loopback] $endif
+	}
+}
+
